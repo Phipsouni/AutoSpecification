@@ -1,4 +1,4 @@
-#AutoSpecification
+# AutoSpecification
 
 Простой Python-скрипт для автоматизации создания Excel-книг спецификаций и скрытия всех листов кроме "Specification"
 
