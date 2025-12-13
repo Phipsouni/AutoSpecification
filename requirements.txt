@@ -1,0 +1,4 @@
+openpyxl
+xlwt
+colorama
+pywin32
