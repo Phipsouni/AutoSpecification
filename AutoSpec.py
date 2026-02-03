@@ -2,6 +2,42 @@ import os
 import re
 import json
 import shutil
+import sys
+import subprocess
+
+
+# ===================== УСТАНОВКА ЗАВИСИМОСТЕЙ =====================
+
+def _ensure_dependencies():
+    """Проверяет наличие библиотек. При ошибке импорта устанавливает из requirements.txt и возвращает False (нужен перезапуск)."""
+    required = [
+        ("openpyxl", "openpyxl"),
+        ("colorama", "colorama"),
+        ("win32com.client", "pywin32"),
+    ]
+    for mod_name, _pip_name in required:
+        try:
+            __import__(mod_name)
+        except ImportError:
+            break
+    else:
+        return True
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    req_path = os.path.join(script_dir, "requirements.txt")
+    if not os.path.isfile(req_path):
+        print("Файл requirements.txt не найден. Установите зависимости вручную: pip install -r requirements.txt")
+        sys.exit(1)
+    print("Установка необходимых библиотек...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_path])
+    return False
+
+
+if __name__ == "__main__":
+    if not _ensure_dependencies():
+        subprocess.run([sys.executable, __file__] + sys.argv[1:])
+        sys.exit(0)
+
 
 from openpyxl import load_workbook
 from colorama import Fore, Style, init
@@ -108,6 +144,31 @@ def scenario_xls(folder, number):
         excel.Quit()
 
 
+def scenario_delete_fcs(folder, number):
+    deleted = 0
+
+    for fname in os.listdir(folder):
+        name, ext = os.path.splitext(fname)
+
+        if ext.lower() not in {".xlsx", ".xls"}:
+            continue
+
+        if not name.lower().endswith("fcs"):
+            continue
+
+        full_path = os.path.join(folder, fname)
+
+        if os.path.isfile(full_path):
+            os.remove(full_path)
+            deleted += 1
+            print(green(f"[УДАЛЕНО] {fname}"))
+
+    if deleted == 0:
+        print(yellow(f"[НЕТ ФАЙЛОВ] Invoice {number} — fcs файлы не найдены"))
+
+    return deleted
+
+
 # ===================== MAIN =====================
 
 def main():
@@ -129,6 +190,7 @@ def main():
         print(yellow("2) Создание файла спецификации XLS"))
         current_path = base_dir if base_dir else "не указан"
         print(yellow(f'3) Изменить путь к директории с инвойсами (Сейчас: {current_path})'))
+        print(yellow("4) Удаление файлов спецификаций (Invoice ... fcs)"))
         print(yellow("0) Выход"))
 
         choice = input("> ").strip()
@@ -140,19 +202,30 @@ def main():
             base_dir = None
             continue
 
-        if choice not in {"1", "2"}:
+        if choice not in {"1", "2", "4"}:
             print(red("Неверный выбор"))
             continue
 
         while True:
-            print(yellow("\nУкажите диапазон номеров инвойсов:"))
-            invoice_numbers = parse_ranges(input("> "))
+            if choice == "4":
+                print(green("\nНажмите Enter ") + yellow("или укажите диапазон номеров:"))
+            else:
+                print(yellow("\nУкажите диапазон номеров инвойсов:"))
+            user_input = input("> ").strip()
 
-            matched = []
-            for folder in os.listdir(base_dir):
-                num = extract_invoice_number(folder)
-                if num in invoice_numbers:
-                    matched.append((num, os.path.join(base_dir, folder)))
+            if choice == "4" and user_input == "":
+                matched = []
+                for folder in os.listdir(base_dir):
+                    num = extract_invoice_number(folder)
+                    if num is not None:
+                        matched.append((num, os.path.join(base_dir, folder)))
+            else:
+                invoice_numbers = parse_ranges(user_input)
+                matched = []
+                for folder in os.listdir(base_dir):
+                    num = extract_invoice_number(folder)
+                    if num in invoice_numbers:
+                        matched.append((num, os.path.join(base_dir, folder)))
 
             if not matched:
                 print(red("Инвойсы указанных номеров не были найдены"))
@@ -164,16 +237,21 @@ def main():
                 try:
                     if choice == "1":
                         scenario_xlsx(folder, number)
-                    else:
+                    elif choice == "2":
                         scenario_xls(folder, number)
+                    elif choice == "4":
+                        scenario_delete_fcs(folder, number)
 
                     processed += 1
                     print(green(f"[ГОТОВО] Invoice {number}"))
                 except Exception as e:
                     print(red(f"[ОШИБКА] Invoice {number}: {e}"))
 
-            print(green(f"\nГотово! Обработано файлов: {processed}"))
-            break  # назад в меню сценариев
+            if choice == "4":
+                print(green("\nГотово! Удаление завершено"))
+            else:
+                print(green(f"\nГотово! Обработано файлов: {processed}"))
+            break
 
     print(green("\nВыход из утилиты"))
     input(yellow("Нажмите Enter для закрытия окна"))
